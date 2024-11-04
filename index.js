@@ -29,7 +29,7 @@ app.use('/api/suppliers', suppliersHandler);
 app.use('/api/integrations', integrationsHandler);
 app.post('/api/verify-password', verifyPassword);
 app.use('/api/accounts-payable', accountsPayableHandler);
-app.post('/api/nfe', nfeHandler);
+// app.post('/api/nfe', nfeHandler);
 app.post('/api/set-sales-password', setSalesPassword);
 app.get('/api/reports', reportsHandler);
 app.use('/api/users', usersHandler);
