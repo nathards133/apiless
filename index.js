@@ -11,10 +11,6 @@ import accountsPayableHandler from './services/accountsPayable.js';
 import nfeHandler from './services/nfe.js';
 import usersHandler from './services/users.js';
 import paymentIntegrationsHandler from './services/payment-integrations.js';
-import clientsHandler from './services/clients.js';
-import tasksHandler from './services/tasks.js';
-import serviceOrderReportsHandler from './services/serviceOrderReports.js';
-import paymentsHandler from './services/payments.js';
 
 const app = express();
 
@@ -38,10 +34,6 @@ app.post('/api/set-sales-password', setSalesPassword);
 app.get('/api/reports', reportsHandler);
 app.use('/api/users', usersHandler);
 app.use('/api/payment-integrations', paymentIntegrationsHandler);
-app.use('/api/clients', clientsHandler);
-app.use('/api/tasks', tasksHandler);
-app.use('/api/reports/service-orders', serviceOrderReportsHandler);
-app.use('/api/payments', paymentsHandler);
 
 app.get('/', (req, res) => {
   res.json({ message: 'API está funcionando!' });
