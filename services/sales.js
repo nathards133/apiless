@@ -6,6 +6,7 @@ import NodeCache from 'node-cache';
 import AccountPayable from '../models/AccountPayable.js';
 import Supplier from '../models/Supplier.js';
 import axios from 'axios';
+import CashRegister from '../models/CashRegister.js';
 
 const salesCache = new NodeCache({ stdTTL: 300 });
 
@@ -17,6 +18,18 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') {
       try {
+        // Verifica se existe um caixa aberto
+        const openCashRegister = await CashRegister.findOne({
+          userId: req.userId,
+          status: 'open'
+        });
+
+        if (!openCashRegister) {
+          return res.status(400).json({ 
+            message: 'Não é possível realizar vendas sem um caixa aberto' 
+          });
+        }
+
         const { items, paymentMethod } = req.body;
         
         const productIds = items.map(item => item._id);
@@ -26,19 +39,33 @@ export default async function handler(req, res) {
           const product = products.find(p => p._id.toString() === item._id);
           return {
             product: item._id,
-            name: product ? product.name : item.name, // Usa o nome do produto do banco de dados, se disponível
+            name: product ? product.name : item.name,
             quantity: item.quantidade,
             price: item.price
           };
         });
 
+        const totalValue = (items || []).reduce((acc, item) => 
+          acc + item.price * item.quantidade, 0
+        );
+
         const sale = new Sale({
           items: saleItems,
-          totalValue: (items || []).reduce((acc, item) => acc + item.price * item.quantidade, 0),
+          totalValue,
           userId: req.userId,
           paymentMethod
         });
         await sale.save();
+
+        // Registra a venda no caixa
+        openCashRegister.currentAmount += totalValue;
+        openCashRegister.transactions.push({
+          type: 'sale',
+          amount: totalValue,
+          description: `Venda #${sale._id}`,
+          paymentMethod
+        });
+        await openCashRegister.save();
 
         // Atualizar o estoque
         for (let item of items) {
@@ -397,37 +424,47 @@ async function getSalesByPeriod(userId, period) {
         label = `Vendas de ${startDate.toLocaleString('default', { month: 'long' })}`;
         break;
       default:
-        console.warn(`Período não reconhecido: ${period}. Usando 'day' como padrão.`);
         startDate = new Date(now.setHours(0, 0, 0, 0));
         endDate = new Date(now.setHours(23, 59, 59, 999));
         label = 'Vendas de hoje';
     }
   
-  const [sales, accountsPayable] = await Promise.all([
-    Sale.find({
-      userId,
-      createdAt: { $gte: startDate, $lte: endDate }
-    }).sort({ createdAt: -1 }).populate('items.product', 'name price'),
-    AccountPayable.find({
-      userId,
-      dueDate: { $gte: startDate, $lte: endDate },
-      isPaid: false
-    })
-  ]);
+    const [sales, accountsPayable, cashRegister] = await Promise.all([
+        Sale.find({
+            userId,
+            createdAt: { $gte: startDate, $lte: endDate }
+        }).sort({ createdAt: -1 }).populate('items.product', 'name price'),
+        AccountPayable.find({
+            userId,
+            dueDate: { $gte: startDate, $lte: endDate },
+            isPaid: false
+        }),
+        CashRegister.find({
+            userId,
+            $or: [
+                { openedAt: { $gte: startDate, $lte: endDate } },
+                { closedAt: { $gte: startDate, $lte: endDate } },
+                { status: 'open' } // Inclui caixas que ainda estão abertos
+            ]
+        }).sort({ openedAt: -1 })
+    ]);
 
-  const grossSales = sales.reduce((total, sale) => total + sale.totalValue, 0);
-  const totalAccountsPayable = accountsPayable.reduce((total, account) => total + account.totalValue, 0);
-  const netProfit = grossSales - totalAccountsPayable;
+    const grossSales = sales.reduce((total, sale) => total + sale.totalValue, 0);
+    const totalAccountsPayable = accountsPayable.reduce((total, account) => 
+        total + account.totalValue, 0
+    );
+    const netProfit = grossSales - totalAccountsPayable;
 
-  return { 
-    sales, 
-    periodInfo: { startDate, endDate, label },
-    financialSummary: {
-      grossSales,
-      totalAccountsPayable,
-      netProfit
-    }
-  };
+    return { 
+        sales, 
+        periodInfo: { startDate, endDate, label },
+        financialSummary: {
+            grossSales,
+            totalAccountsPayable,
+            netProfit,
+            cashRegisterData: cashRegister
+        }
+    };
 }
 
 async function getFinancialSummary(req, res) {

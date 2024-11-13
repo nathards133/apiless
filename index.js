@@ -11,11 +11,16 @@ import accountsPayableHandler from './services/accountsPayable.js';
 import nfeHandler from './services/nfe.js';
 import usersHandler from './services/users.js';
 import paymentIntegrationsHandler from './services/payment-integrations.js';
+import cashRegisterHandler from './services/cash-register.js';
 
 const app = express();
 
 app.use(cors({
-  origin: ['https://gestor-comercial-panel.vercel.app', 'http://localhost:3000','http://localhost:3001', 'https://typebot.co/my-typebot-qx2vjg5'],
+  origin: ['https://gestor-comercial-panel.vercel.app',
+     'http://localhost:3000',
+     'http://localhost:3001',
+     'http://localhost:3002',
+      'https://typebot.co/my-typebot-qx2vjg5'],
   credentials: true
 }));
 app.use(compression());
@@ -34,6 +39,7 @@ app.post('/api/set-sales-password', setSalesPassword);
 app.get('/api/reports', reportsHandler);
 app.use('/api/users', usersHandler);
 app.use('/api/payment-integrations', paymentIntegrationsHandler);
+app.use('/api/cash-register', cashRegisterHandler);
 
 app.get('/', (req, res) => {
   res.json({ message: 'API está funcionando!' });
