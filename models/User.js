@@ -36,11 +36,6 @@ const UserSchema = new mongoose.Schema({
     serie: { type: String, default: '1' },
     numeroInicial: { type: Number, default: 1 }
   },
-  systemType: {
-    type: String,
-    enum: ['pdv', 'service'],
-    required: true
-  }
   
 }, { timestamps: true });
 
