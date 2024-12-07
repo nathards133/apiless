@@ -89,7 +89,7 @@ router.post('/login', async (req, res) => {
 		const token = jwt.sign(
 			{ userId: user._id, role: user.role, company: user.company, businessType: user.businessType },
 			process.env.JWT_SECRET,
-			{ expiresIn: '24h' }
+			{ expiresIn: '7d' }
 		);
 
 		await auditLogger.log('Login de Usuário', 

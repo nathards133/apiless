@@ -11,14 +11,15 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     // Lógica para createProduct
     try {
-      const { name, price, quantity, barcode, unit, expirationDate } = req.body;
+      const { name, price, quantity, barcode, unit, expirationDate, minStockLevel } = req.body;
       const product = new Product({
         name,
         price,
         quantity,
         barcode,
         unit,
-        userId: req.userId 
+        userId: req.userId,
+        minStockLevel: minStockLevel || undefined
       });
 
       if (expirationDate) {

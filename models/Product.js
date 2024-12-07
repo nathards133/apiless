@@ -13,7 +13,9 @@ const ProductSchema = new mongoose.Schema({
   minStockLevel: { type: Number, default: 5 },
   expirationDate: { type: Date },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  archived: { type: Boolean, default: false }
+  archived: { type: Boolean, default: false },
+  profitMargin: { type: Number, default: 0 },
+  finalPrice: { type: Number }
 }, { timestamps: true });
 
 export default mongoose.model('Product', ProductSchema);

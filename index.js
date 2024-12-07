@@ -12,7 +12,7 @@ import nfeHandler from './services/nfe.js';
 import usersHandler from './services/users.js';
 import paymentIntegrationsHandler from './services/payment-integrations.js';
 import cashRegisterHandler from './services/cash-register.js';
-
+// import notificationsHandler from './services/notifications.js';
 const app = express();
 
 app.use(cors({
@@ -40,6 +40,7 @@ app.get('/api/reports', reportsHandler);
 app.use('/api/users', usersHandler);
 app.use('/api/payment-integrations', paymentIntegrationsHandler);
 app.use('/api/cash-register', cashRegisterHandler);
+// app.use('/api/notifications', notificationsHandler);
 
 app.get('/', (req, res) => {
   res.json({ message: 'API está funcionando!' });

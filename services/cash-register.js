@@ -1,6 +1,7 @@
 import dbConnect from '../lib/dbConnect.js';
 import CashRegister from '../models/CashRegister.js';
 import auth from '../lib/auth.js';
+import Notification from '../models/Notification.js';
 
 export default async function handler(req, res) {
   await dbConnect();
@@ -33,37 +34,84 @@ export default async function handler(req, res) {
 }
 
 async function openCashRegister(req, res) {
-  const { initialAmount } = req.body;
-  const userId = req.userId;
-
   try {
-    // Verifica se já existe um caixa aberto
+    console.log('Corpo da requisição:', req.body);
+    
+    const initialAmountValue = req.body.initialAmount.initialAmount;
+    const cashLimitValue = req.body.initialAmount.cashLimit;
+    const userId = req.userId;
+
+    console.log('Valores extraídos:', {
+      initialAmount: initialAmountValue,
+      cashLimit: cashLimitValue
+    });
+
+    if (!initialAmountValue || !cashLimitValue) {
+      return res.status(400).json({ 
+        message: 'Valor inicial e limite de caixa são obrigatórios',
+        receivedValues: { initialAmount: initialAmountValue, cashLimit: cashLimitValue }
+      });
+    }
+
+    const initialAmountNumber = Number(initialAmountValue);
+    const cashLimitNumber = Number(cashLimitValue);
+
+    if (isNaN(initialAmountNumber) || initialAmountNumber <= 0) {
+      return res.status(400).json({ 
+        message: 'Valor inicial deve ser um número maior que zero',
+        receivedValue: initialAmountValue
+      });
+    }
+
+    if (isNaN(cashLimitNumber) || cashLimitNumber <= 0) {
+      return res.status(400).json({ 
+        message: 'Limite de caixa deve ser um número maior que zero',
+        receivedValue: cashLimitValue
+      });
+    }
+
     const existingOpenRegister = await CashRegister.findOne({
       userId,
       status: 'open'
     });
 
     if (existingOpenRegister) {
-      return res.status(400).json({ message: 'Já existe um caixa aberto para este usuário' });
+      return res.status(400).json({ 
+        message: 'Já existe um caixa aberto para este usuário' 
+      });
     }
 
-    // Cria novo registro de caixa
     const cashRegister = new CashRegister({
       userId,
-      initialAmount,
-      currentAmount: initialAmount,
+      initialAmount: initialAmountNumber,
+      currentAmount: initialAmountNumber,
+      cashLimit: cashLimitNumber,
       transactions: [{
         type: 'deposit',
-        amount: initialAmount,
-        description: 'Valor inicial do caixa'
+        amount: initialAmountNumber,
+        description: 'Valor inicial do caixa',
+        timestamp: new Date()
       }]
     });
 
     await cashRegister.save();
+
+    const cashLimitStatus = checkCashLimit(cashRegister);
+    if (cashLimitStatus.exceeded) {
+      await createCashLimitNotification(
+        req.userId,
+        cashLimitStatus.currentAmount,
+        cashLimitStatus.limit
+      );
+    }
+
     res.status(201).json(cashRegister);
   } catch (error) {
     console.error('Erro ao abrir caixa:', error);
-    res.status(500).json({ message: 'Erro ao abrir caixa' });
+    res.status(500).json({ 
+      message: 'Erro ao abrir caixa', 
+      error: error.message 
+    });
   }
 }
 
@@ -89,7 +137,6 @@ async function closeCashRegister(req, res) {
     const userId = req.userId;
 
     try {
-        // Busca o caixa aberto atual
         const cashRegister = await CashRegister.findOne({
             userId,
             status: 'open'
@@ -99,7 +146,6 @@ async function closeCashRegister(req, res) {
             return res.status(404).json({ message: 'Nenhum caixa aberto encontrado' });
         }
 
-        // Calcula totais por tipo de transação
         const totalSales = cashRegister.transactions
             .filter(t => t.type === 'sale')
             .reduce((sum, t) => sum + t.amount, 0);
@@ -108,16 +154,14 @@ async function closeCashRegister(req, res) {
             .filter(t => t.type === 'withdrawal')
             .reduce((sum, t) => sum + t.amount, 0);
 
-        // Calcula diferenças
         const differences = {};
         Object.entries(values).forEach(([method, amount]) => {
             const expected = method === 'cash' ? 
                 (cashRegister.initialAmount + totalSales - totalWithdrawals) : 
-                0; // Para outros métodos, ajuste conforme necessário
+                0;
             differences[method] = amount - expected;
         });
 
-        // Atualiza o registro do caixa
         cashRegister.status = 'closed';
         cashRegister.closedAt = new Date();
         cashRegister.finalAmounts = values;
@@ -127,7 +171,7 @@ async function closeCashRegister(req, res) {
             totalWithdrawals,
             expectedBalance: {
                 cash: cashRegister.initialAmount + totalSales - totalWithdrawals,
-                credit: 0, // Ajuste conforme necessário
+                credit: 0,
                 debit: 0,
                 pix: 0
             },
@@ -136,7 +180,6 @@ async function closeCashRegister(req, res) {
             observation
         };
 
-        // Registra diferenças como transações
         Object.entries(differences).forEach(([method, difference]) => {
             if (difference !== 0) {
                 cashRegister.transactions.push({
@@ -191,20 +234,16 @@ function calculateExpectedBalance(cashRegister, summary) {
     byMethod: {}
   };
 
-  // Adiciona valor inicial apenas para dinheiro
   expectedBalance.byMethod['dinheiro'] = cashRegister.initialAmount;
 
-  // Adiciona vendas por método de pagamento
   Object.entries(summary.sales.byMethod).forEach(([method, amount]) => {
     expectedBalance.byMethod[method] = (expectedBalance.byMethod[method] || 0) + amount;
   });
 
-  // Subtrai sangrias apenas do dinheiro
   if (expectedBalance.byMethod['dinheiro']) {
     expectedBalance.byMethod['dinheiro'] -= summary.withdrawals.total;
   }
 
-  // Calcula total
   expectedBalance.total = Object.values(expectedBalance.byMethod).reduce((acc, curr) => acc + curr, 0);
 
   return expectedBalance;
@@ -236,7 +275,6 @@ async function handleWithdrawal(req, res) {
       return res.status(400).json({ message: 'Não há caixa aberto' });
     }
 
-    // Converte o valor para número caso venha como string
     const withdrawalAmount = typeof amount === 'string' ? 
       parseFloat(amount.replace(',', '.')) : amount;
 
@@ -246,7 +284,6 @@ async function handleWithdrawal(req, res) {
       });
     }
 
-    // Atualiza o saldo e registra a transação
     cashRegister.currentAmount -= withdrawalAmount;
     cashRegister.transactions.push({
       type: 'withdrawal',
@@ -256,6 +293,15 @@ async function handleWithdrawal(req, res) {
     });
 
     await cashRegister.save();
+
+    const cashLimitStatus = checkCashLimit(cashRegister);
+    if (cashLimitStatus.exceeded) {
+      await createCashLimitNotification(
+        req.userId,
+        cashLimitStatus.currentAmount,
+        cashLimitStatus.limit
+      );
+    }
 
     res.json({
       message: 'Sangria realizada com sucesso',
@@ -288,4 +334,45 @@ async function getDailyCashRegisters(req, res) {
         console.error('Erro ao buscar caixas do dia:', error);
         res.status(500).json({ message: 'Erro ao buscar caixas do dia' });
     }
-} 
+}
+
+function checkCashLimit(cashRegister) {
+    const cashTransactions = cashRegister.transactions.filter(t => 
+        (t.type === 'sale' && t.paymentMethod === 'dinheiro') || 
+        t.type === 'deposit' ||
+        (t.type === 'withdrawal' && t.paymentMethod === 'dinheiro')
+    );
+
+    const totalCash = cashTransactions.reduce((acc, t) => {
+        if (t.type === 'withdrawal') {
+            return acc - t.amount;
+        }
+        return acc + t.amount;
+    }, 0);
+
+    return {
+        exceeded: totalCash >= cashRegister.cashLimit,
+        currentAmount: totalCash,
+        limit: cashRegister.cashLimit
+    };
+}
+
+async function createCashLimitNotification(userId, currentAmount, limit) {
+    try {
+        const notification = new Notification({
+            userId,
+            message: `O limite de caixa foi excedido. Valor atual: R$ ${currentAmount.toFixed(2)}. Limite: R$ ${limit.toFixed(2)}`,
+            amount: currentAmount,
+            paymentMethod: 'dinheiro',
+            status: 'success',
+            read: false
+        });
+
+        await notification.save();
+        return notification;
+    } catch (error) {
+        console.error('Erro ao criar notificação:', error);
+        throw error;
+    }
+}
+ 

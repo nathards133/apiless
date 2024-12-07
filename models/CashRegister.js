@@ -53,7 +53,8 @@ const CashRegisterSchema = new mongoose.Schema({
       of: Number
     },
     observations: String
-  }
+  },
+  cashLimit: { type: Number, required: false }
 });
 
 export default mongoose.models.CashRegister || mongoose.model('CashRegister', CashRegisterSchema); 
